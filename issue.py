@@ -13,9 +13,6 @@ class Issue:
         self.bin = None
 
         try:
-            date_match = re.match(r"(\w{3})[\s\-](\d{2}).*(\d{4})", path)
-            self.date = f"{date_match.group(3)}-{MONTHS[date_match.group(1)]}-" \
-                        f"{date_match.group(2)}"
             self.vol = re.search(r"Vol\.(\d{1,2})", path).group(1)
             self.issue = re.search(r"Issue\s?(\w+|\d+)", path).group(1)
         except AttributeError:
