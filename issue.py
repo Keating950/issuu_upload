@@ -1,6 +1,6 @@
 import re
 import logging
-from CONST import MONTHS
+from const import MONTHS
 
 
 class Issue:
