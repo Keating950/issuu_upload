@@ -1,10 +1,11 @@
 import const
-import os
-import requests as r
-import re
+from datetime import datetime
 import hashlib
 import logging
-from datetime import datetime
+import multiprocessing
+import os
+import re
+import requests as r
 
 
 def file_directory_prompt() -> list:
@@ -25,7 +26,7 @@ def calc_msg_signature(request_params: dict) -> str:
     return msg_hash.hexdigest()
 
 
-def list_web_folders():
+def list_web_folders() -> dict:
     params = {
         "apiKey"    : const.KEY,
         "action"    : "issuu.folders.list",
@@ -62,6 +63,11 @@ def make_web_folder(s: r.Session, name: str) -> None:
     print(f"Created folder {name}")
 
 
+def upload_file(s: r.Session, filename: str) -> None:
+    # TODO:
+    pass
+
+
 if __name__ == "__main__":
     logging.basicConfig(
         format="[%(asctime)s] %(levelname)s [%(name)s.%(funcName)s:%(lineno)d] %("
@@ -73,9 +79,5 @@ if __name__ == "__main__":
     files = [f for f in os.listdir(
         os.path.abspath("/Volumes/Files/Datasets/Tribune Digital Archives")) if
              os.path.splitext(f)[1] == ".pdf"]
-    folders = list_web_folders()
-    for i in range(5):
-        try:
-            print(f"{files[i]}\n{find_web_folder_id(folders, files[i])}\n\n")
-        except IndexError:
-            continue
+    print(list_web_folders())
+    # pool = multiprocessing.Pool()
