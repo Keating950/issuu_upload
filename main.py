@@ -37,7 +37,8 @@ def get_web_folders(start_idx: int) -> dict:
         "format": "json",
     }
     params["signature"] = calc_msg_signature(params)
-    resp = r.post(ENDPOINT, params=params)
+    # general endpoint for non-upload requests
+    resp = r.post("http://api.issuu.com/1_0", params=params)
     resp_info = resp.json()["rsp"]["_content"]["result"]
     if "error" in resp_info.keys():
         raise r.exceptions.HTTPError
@@ -82,7 +83,8 @@ def parse_file(filepath: str) -> dict:
 def upload_file(filename: str, session: r.Session) -> None:
     file_data = parse_file(filename)
     file_content = {"file": open(filename, "rb").read()}
-    raw_req = r.Request("POST", UPLOAD_ENDPOINT, data=file_data,
+    # upload-specific endpoint
+    raw_req = r.Request("POST", "http://upload.issuu.com/1_0", data=file_data,
                         files=file_content)
     raw_req.data.update(session.params)
     raw_req.data.update({"signature": calc_msg_signature(raw_req.data)})
@@ -137,11 +139,8 @@ if __name__ == "__main__":
         filename="upload.log",
         filemode="a+",
     )
-    UPLOAD_ENDPOINT = "http://upload.issuu.com/1_0"
-    ENDPOINT = "http://api.issuu.com/1_0"
     API_KEY = os.getenv("API_KEY")
     API_SECRET = os.getenv("API_SECRET")
-
     files = tuple(path.join(path.abspath(fp), f) for f in
                   os.listdir(path.abspath(fp))
                   if path.splitext(f)[1] == ".pdf")
