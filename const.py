@@ -16,5 +16,5 @@ MONTHS = {
 }
 UPLOAD_ENDPOINT = "http://upload.issuu.com/1_0"
 ENDPOINT = "http://api.issuu.com/1_0"
-KEY = getenv("KEY")
-SECRET = getenv("SECRET")
+KEY = getenv("API_KEY")
+SECRET = getenv("API_SECRET")
