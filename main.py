@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
 
-from issue import parse_file
-import const
 import hashlib
 import logging
 import os
+import re
+from datetime import datetime
 from os import path
-import requests as r
 from sys import argv
+from threading import Thread
+
+import requests as r
 
 
 def file_directory_prompt() -> list:
@@ -19,35 +21,23 @@ def file_directory_prompt() -> list:
 
 
 def calc_msg_signature(request_params: dict) -> str:
-    msg = const.SECRET
+    msg = API_SECRET
     for k, v in sorted(request_params.items(), key=lambda item: item[0]):
         msg += f"{k}{v}"
     msg_hash = hashlib.md5(msg.encode("utf-8"))
     return msg_hash.hexdigest()
 
 
-def make_web_folder(s: r.Session, name: str) -> None:
-    s.params["folderName"] = name
-    s.params["signature"] = calc_msg_signature(dict(s.params))
-    resp = s.get(const.ENDPOINT)
-    if resp.status_code == 201:
-        print(resp)
-        raise Exception
-    s.params.pop("signature", None)
-    print(s.params)
-    print(f"Created folder {name}")
-
-
 def get_web_folders(start_idx: int) -> dict:
     params = {
-        "apiKey": const.KEY,
+        "apiKey": API_KEY,
         "action": "issuu.folders.list",
         "startIndex": start_idx,
         "pageSize": 30,
         "format": "json",
     }
     params["signature"] = calc_msg_signature(params)
-    resp = r.post(const.ENDPOINT, params=params)
+    resp = r.post(ENDPOINT, params=params)
     resp_info = resp.json()["rsp"]["_content"]["result"]
     if "error" in resp_info.keys():
         raise r.exceptions.HTTPError
@@ -61,21 +51,75 @@ def get_web_folders(start_idx: int) -> dict:
     return folders
 
 
-def upload_file(filename: str) -> None:
-    file_data = parse_file(filename, web_folders)
+def parse_file(filepath: str) -> dict:
+    def parse_date() -> datetime.date:
+        name = str(path.split(filepath)[1])
+        date_match = re.search(r"^(\w{3,4})-(\d{2}).*-(19\d{2}|20\d{2})",
+                               name)
+        date_str = "-".join(
+            (date_match.group(1), date_match.group(2), date_match.group(3))
+        ).upper().replace("SEPT", "SEP")
+        return datetime.strptime(date_str, "%b-%d-%Y").date()
+
+    def find_web_folder_id() -> str:
+        if pub_date.month > 4:
+            return web_folders[
+                f"{pub_date.year}-{pub_date.year + 1}"]
+        return web_folders[
+            f"{pub_date.year - 1}-{pub_date.year}"]
+
+    vol_no = re.search(r"Vol\.(\d{1,2})", filepath).group(1)
+    issue_no = re.search(r"Issue\s?(\w+|\d+)", filepath).group(1)
+    pub_date = parse_date()
+    return {
+        "name": f"mcgilltribune.vol{vol_no}.issue{issue_no}",
+        "folderIds": find_web_folder_id(),
+        "publishDate": datetime.strftime(pub_date, "%Y-%m-%d"),
+        "title": f"The McGill Tribune Vol. {vol_no} Issue {issue_no}",
+    }
+
+
+def upload_file(filename: str, session: r.Session) -> None:
+    file_data = parse_file(filename)
     file_content = {"file": open(filename, "rb").read()}
-    rawreq = r.Request("POST", const.UPLOAD_ENDPOINT, data=file_data,
-                       files=file_content)
-    rawreq.data.update(session.params)
-    rawreq.data.update({"signature": calc_msg_signature(rawreq.data)})
-    req = session.prepare_request(rawreq)
+    raw_req = r.Request("POST", UPLOAD_ENDPOINT, data=file_data,
+                        files=file_content)
+    raw_req.data.update(session.params)
+    raw_req.data.update({"signature": calc_msg_signature(raw_req.data)})
+    req = session.prepare_request(raw_req)
     resp = session.send(req, timeout=240)
     resp_info = resp.json()["rsp"]["_content"]
     if "error" in resp_info.keys():
-        print(f"ERROR: {filename}-{resp.json()}")
+        logging.error(f"ERROR: {filename}-{resp.json()}")
     else:
-        print(f"SUCCESS: {filename}-{resp.json()}")
         logging.info(filename)
+
+
+def upload_file_list(file_list: list) -> None:
+    s = r.Session()
+    s.params = {
+        "apiKey": API_KEY,
+        "action": "issuu.document.upload",
+        "commentsAllowed": "false",
+        "format": "json",
+        "language": "en",
+        "ratingAllowed": "false",
+    }
+    error_count = 0
+    for f in file_list:
+        try:
+            upload_file(f, s)
+        except (KeyError, re.error):
+            logging.exception(path.basename(f))
+        except Exception:
+            error_count += 1
+        finally:
+            if error_count >= 10:
+                return
+
+
+def chunk_list(lst, n_chunks):
+    return tuple(lst[i::min(n_chunks, len(lst))] for i in range(n_chunks))
 
 
 if __name__ == "__main__":
@@ -85,6 +129,7 @@ if __name__ == "__main__":
         fp = argv[1]
     else:
         raise ValueError(f"{argv[1]} is not a valid path")
+
     logging.basicConfig(
         format="[%(asctime)s] %(levelname)s"
                "[%(name)s.%(funcName)s:]%(message)s",
@@ -92,16 +137,23 @@ if __name__ == "__main__":
         filename="upload.log",
         filemode="a+",
     )
-    files = [path.join(path.abspath(fp), f) for f in
-             os.listdir(path.abspath(fp))
-             if path.splitext(f)[1] == ".pdf"]
+    UPLOAD_ENDPOINT = "http://upload.issuu.com/1_0"
+    ENDPOINT = "http://api.issuu.com/1_0"
+    API_KEY = os.getenv("API_KEY")
+    API_SECRET = os.getenv("API_SECRET")
+
+    files = tuple(path.join(path.abspath(fp), f) for f in
+                  os.listdir(path.abspath(fp))
+                  if path.splitext(f)[1] == ".pdf")
     web_folders = get_web_folders(0)
-    session = r.Session()
-    session.params = {
-        "apiKey": const.KEY,
-        "action": "issuu.document.upload",
-        "commentsAllowed": "false",
-        "format": "json",
-        "language": "en",
-        "ratingAllowed": "false",
-    }
+    # Why not use the more obvious multiprocessing.Pool.map function?
+    # The thread-safety of Requests's Session object is unclear. This way,
+    # each thread gets its own Session.
+    chunks = chunk_list(files, 4)
+    threads = []
+    for i in range(4):
+        # enclosing chunk in another tuple to prevent expansion
+        threads.append(Thread(target=upload_file_list, args=(chunks[i],)))
+        threads[i].start()
+    for t in threads:
+        t.join()
