@@ -7,6 +7,7 @@ import re
 from datetime import datetime
 from os import path
 from sys import argv
+import calendar
 from threading import Thread
 
 import requests as r
@@ -30,11 +31,11 @@ def calc_msg_signature(request_params: dict) -> str:
 
 def get_web_folders(start_idx: int) -> dict:
     params = {
-        "apiKey": API_KEY,
-        "action": "issuu.folders.list",
+        "apiKey"    : API_KEY,
+        "action"    : "issuu.folders.list",
         "startIndex": start_idx,
-        "pageSize": 30,
-        "format": "json",
+        "pageSize"  : 30,
+        "format"    : "json",
     }
     params["signature"] = calc_msg_signature(params)
     # general endpoint for non-upload requests
@@ -72,11 +73,16 @@ def parse_file(filepath: str) -> dict:
     vol_no = re.search(r"Vol\.(\d{1,2})", filepath).group(1)
     issue_no = re.search(r"Issue\s?(\w+|\d+)", filepath).group(1)
     pub_date = parse_date()
+    desc_template = "This is volume {0}, issue {1} of The McGill Tribune, published " \
+                    "in {2} of {3}. "
     return {
-        "name": f"mcgilltribune.vol{vol_no}.issue{issue_no}",
-        "folderIds": find_web_folder_id(),
+        "name"       : f"mcgilltribune.vol{vol_no}.issue{issue_no}",
+        "folderIds"  : find_web_folder_id(),
         "publishDate": datetime.strftime(pub_date, "%Y-%m-%d"),
-        "title": f"The McGill Tribune Vol. {vol_no} Issue {issue_no}",
+        "title"      : f"The McGill Tribune Vol. {vol_no} Issue {issue_no}",
+        "description": desc_template.format(vol_no, issue_no,
+                                            calendar.month_name[pub_date.month],
+                                            pub_date.year)
     }
 
 
@@ -97,15 +103,15 @@ def upload_file(filename: str, session: r.Session) -> None:
         logging.info(filename)
 
 
-def upload_file_list(file_list: list) -> None:
+def upload_file_list(file_list: list or tuple) -> None:
     s = r.Session()
     s.params = {
-        "apiKey": API_KEY,
-        "action": "issuu.document.upload",
+        "apiKey"         : API_KEY,
+        "action"         : "issuu.document.upload",
         "commentsAllowed": "false",
-        "format": "json",
-        "language": "en",
-        "ratingAllowed": "false",
+        "format"         : "json",
+        "language"       : "en",
+        "ratingAllowed"  : "false",
     }
     error_count = 0
     for f in file_list:
@@ -120,7 +126,7 @@ def upload_file_list(file_list: list) -> None:
                 return
 
 
-def chunk_list(lst, n_chunks):
+def chunk_list(lst, n_chunks) -> tuple:
     return tuple(lst[i::min(n_chunks, len(lst))] for i in range(n_chunks))
 
 
@@ -148,6 +154,7 @@ if __name__ == "__main__":
     # Why not use the more obvious multiprocessing.Pool.map function?
     # The thread-safety of Requests's Session object is unclear. This way,
     # each thread gets its own Session.
+
     chunks = chunk_list(files, 4)
     threads = []
     for i in range(4):
